@@ -1,0 +1,23 @@
+{
+  "name": "xfi-peggy",
+  "version": "1.0.0",
+  "description": "XFI peggy",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@openzeppelin/contracts": "^3.2.0",
+    "@truffle/contract": "^4.2.22",
+    "big-integer": "^1.6.48",
+    "chai": "^4.2.0",
+    "cosmos-lib": "^1.1.0",
+    "jayson": "^3.3.4",
+    "web3": "^1.3.0"
+  }
+}
