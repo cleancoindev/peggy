@@ -1,16 +1,17 @@
 {
   "name": "xfi-peggy",
   "version": "1.0.0",
-  "description": "XFI peggy",
+  "description": "Peggy",
   "main": "truffle-config.js",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "compile": "rm -rf build && NODE_PATH=. truffle compile",
+    "test": "NODE_PATH=. mocha test/index"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Wings Stiftung",
+  "license": "MIT",
   "dependencies": {
     "@openzeppelin/contracts": "^3.2.0",
     "@truffle/contract": "^4.2.22",

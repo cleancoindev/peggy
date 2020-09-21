@@ -1,12 +1,15 @@
 pragma solidity ^0.6.6;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./interfaces/IERC20.sol";
+import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
+// TODOs list:
+// * let's remove powerThreshold? and use totalPower / 2 + 1?
 contract Peggy {
     using SafeMath for uint256;
 
     // Deposit event.
+	event ValsetUpdated(address[] _validators, uint256[] _powers);
     event Deposit(address indexed _erc20, bytes32 indexed _destination, uint256 _amount);
 	event Withdraw(address indexed _erc20, address indexed _destination, uint256 _amount);
 
@@ -22,7 +25,7 @@ contract Peggy {
 	// Checkpoint method name hash ("checkpoint").
 	bytes32 constant public CHECKPOINT_METHOD_NAME = keccak256("checkpoint");
 
-	// Withdraw method name.
+	// Withdraw method name hash ("withdraw").
 	bytes32 constant public WITHDRAW_METHOD_NAME = keccak256("withdraw");
 
 	// List of processed withdraws.
@@ -111,7 +114,80 @@ contract Peggy {
 		emit Deposit(_erc20, _destination, _amount);
 	}
 
-	// TODO: Update validator set.
+	// This updates the valset by checking that the validators in the current valset have signed off on the
+	// new valset. The signatures supplied are the signatures of the current valset over the checkpoint hash
+	// generated from the new valset.
+	function updateValset(
+		// The new version of the validator set
+		address[] memory _newValidators,
+		uint256[] memory _newPowers,
+		uint256 _newValsetNonce,
+		// The current validators that approve the change
+		address[] memory _validators,
+		uint256[] memory _powers,
+		uint256 _valsetNonce,
+		// These are arrays of the parts of the current validator's signatures
+		uint8[] memory _v,
+		bytes32[] memory _r,
+		bytes32[] memory _s
+	) public {
+		// CHECKS
+
+		// Check that new validators and powers set is well-formed
+		require(_newValidators.length == _newPowers.length, 'Peggy: Malformed new validator set');
+
+		// Check that current validators, powers, and signatures (v,r,s) set is well-formed
+		require(
+			_validators.length == _powers.length &&
+			_validators.length == _v.length &&
+			_validators.length == _r.length &&
+			_validators.length == _s.length,
+			'Peggy: Malformed current validator set'
+		);
+
+		// Check that the supplied current validator set matches the saved checkpoint
+		require(
+			makeCheckpoint(
+				_validators,
+				_powers,
+				_valsetNonce,
+				peggyId
+			) == lastCheckpoint,
+			'Peggy: Supplied current validators and powers do not match checkpoint'
+		);
+
+		// Check that the valset nonce is greater than the old one
+		require(
+			_newValsetNonce > _valsetNonce,
+			'Peggy: New valset nonce must be greater than the current nonce'
+		);
+
+		// Check that enough current validators have signed off on the new validator set
+		bytes32 newCheckpoint = makeCheckpoint(
+			_newValidators,
+			_newPowers,
+			_newValsetNonce,
+			peggyId
+		);
+
+		checkValidatorSignatures(
+			_validators,
+			_powers,
+			_v,
+			_r,
+			_s,
+			newCheckpoint,
+			powerThreshold
+		);
+
+		// TODO: check that new powers enough to approve anything.
+
+		// Stored to be used next time to validate that the valset
+		// supplied by the caller is correct.
+		lastCheckpoint = newCheckpoint;
+
+		emit ValsetUpdated(_newValidators, _newPowers);
+	}
 
 	// Withdraw function.
 	// Accepting id, erc20 address, destination.

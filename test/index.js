@@ -37,7 +37,6 @@ global.WEB3_PROVIDER_URL = WEB3_PROVIDER_URL;
 global.helpers           = helpers;
 global.TestRpc           = TestRpc;
 global.rpc               = rpcWithClient;
-global.moveTime          = helpers.moveTime.bind(null, rpcWithClient);
 
 describe('Integration', () => {
     require('test/integration/peggy');
