@@ -4,11 +4,9 @@ const { toWei, toStr } = require("../lib/helpers");
 const cosmos = require('cosmos-lib');
 const web3 = new Web3(WEB3_PROVIDER_URL);
 const crypto = require('crypto');
+const { makeWithdrawSignature, makeCheckpointSignature, makeCheckpoint } = require('../lib/signatures');
 
 const VALIDATORS_N = 10;
-
-const CHECKPOINT_METHOD = Buffer.from(web3.utils.keccak256('checkpoint').slice(2), 'hex');
-const WITHDRAW_METHOD = Buffer.from(web3.utils.keccak256('withdraw').slice(2), 'hex')
 
 // Gas - deposit ~ 40-60k.
 // Gas - withdraw - ~ 200k (10 validators).
@@ -20,7 +18,7 @@ describe('Peggy', () => {
     const address = cosmos.address.getAddress(keys.publicKey, prefix); // prefix by default is 'cosmos'.
     const comsosBytes32 = cosmos.address.getBytes32(address);
 
-    const peggyId = Buffer.from(web3.utils.keccak256("dfinance_peggy"), 'hex');
+    const peggyId = Buffer.from(web3.utils.keccak256("dfinance_peggy").slice(2), 'hex');
 
     const powerThreshold = '5000000';
     const creator       = web3.eth.accounts.create();
@@ -79,7 +77,7 @@ describe('Peggy', () => {
 
     before('deploy', async () => {
         // Deploy XFI.
-        const checkpoint = makeCheckpoint(validators, 0, peggyId);
+        const checkpoint = makeCheckpoint(web3, validators, 0, peggyId);
 
         const web3Provider = new Web3.providers.HttpProvider(WEB3_PROVIDER_URL);
 
@@ -95,7 +93,7 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < validators.length; i++) {
-            let signature = makeCheckpointSignature(checkpoint, powerThreshold, validators[i]);
+            let signature = makeCheckpointSignature(web3, checkpoint, powerThreshold, validators[i]);
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -154,7 +152,7 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < validators.length; i++) {
-            let signature = makeWithdrawSignature(txId, toWithdraw, recipient.address, peggyId, validators[i]);
+            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -188,7 +186,7 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < 1; i++) {
-            let signature = makeWithdrawSignature(txId, toWithdraw, recipient.address, peggyId, validators[i]);
+            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -224,7 +222,7 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < validators.length; i++) {
-            let signature = makeWithdrawSignature(txId, toWithdraw, recipient.address, peggyId, validators[i]);
+            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -259,7 +257,7 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < fakeValidators.length; i++) {
-            let signature = makeWithdrawSignature(txId, toWithdraw, recipient.address, peggyId, fakeValidators[i]);
+            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, fakeValidators[i]);
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -282,7 +280,7 @@ describe('Peggy', () => {
             validators[i].power = 750000;
         }
 
-        const checkpoint = makeCheckpoint(validators, 1, peggyId);
+        const checkpoint = makeCheckpoint(web3, validators, 1, peggyId);
 
         const valAddresses = validators.map(v => v.account.address);
         const valPowers = validators.map(v => toStr(v.power));
@@ -312,7 +310,7 @@ describe('Peggy', () => {
 
     // replace validators list.
     it('replace validators list', async () => {
-        const checkpoint = makeCheckpoint(replacedValidators, 2, peggyId);
+        const checkpoint = makeCheckpoint(web3, replacedValidators, 2, peggyId);
 
         const valAddresses = validators.map(v => v.account.address);
         const valPowers = validators.map(v => toStr(v.power));
@@ -348,7 +346,7 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < validators.length; i++) {
-            let signature = makeWithdrawSignature(txId, toWithdraw, recipient.address, peggyId, validators[i]);
+            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -368,26 +366,3 @@ describe('Peggy', () => {
     });
 });
 
-function makeWithdrawSignature(id, amount, destination, peggyId, validator) {
-   const toSign = web3.utils.keccak256(web3.eth.abi.encodeParameters(
-       ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address'],
-       [peggyId, WITHDRAW_METHOD, id, amount, destination]
-   ));
-   
-   return web3.eth.accounts.sign(toSign, validator.account.privateKey);
-}
-
-function makeCheckpointSignature(checkpoint, powerThreshold, validator) {
-    const toSign = web3.utils.keccak256(web3.eth.abi.encodeParameters(['bytes32', 'uint256'], [checkpoint, powerThreshold]));
-    return web3.eth.accounts.sign(toSign, validator.account.privateKey);
-}
-
-function makeCheckpoint(validators, nonce, peggyId) {
-    const valAddresses = validators.map(v => v.account.address);
-    const valPowers = validators.map(v => toStr(v.power));
-
-    return web3.utils.keccak256(web3.eth.abi.encodeParameters(
-        ['bytes32', 'bytes32', 'uint256', 'address[]', 'uint256[]'], 
-        [peggyId, CHECKPOINT_METHOD, nonce, valAddresses, valPowers]
-    ))
-}

@@ -8,7 +8,8 @@
   },
   "scripts": {
     "compile": "rm -rf build && NODE_PATH=. truffle compile",
-    "test": "NODE_PATH=. mocha test/index"
+    "test": "NODE_PATH=. mocha test/index",
+    "send": "NODE_PATH=. node scripts/send.js"
   },
   "author": "Wings Stiftung",
   "license": "MIT",
@@ -18,6 +19,7 @@
     "big-integer": "^1.6.48",
     "chai": "^4.2.0",
     "cosmos-lib": "^1.1.0",
+    "dotenv": "^8.2.0",
     "jayson": "^3.3.4",
     "web3": "^1.3.0"
   }
