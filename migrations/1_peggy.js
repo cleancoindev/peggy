@@ -1,13 +1,22 @@
 /* global artifacts */
+
 'use strict';
 
 const path = require('path');
+
 require('dotenv').config({path: path.resolve(__dirname, '..', '.env')});
 
-const Peggy = artifacts.require("Peggy");
-const Web3 = require('Web3');
+const Web3  = require('Web3');
+const sigs  = require('../test/lib/signatures'); // FIXME
+
+const Peggy = artifacts.require('Peggy');
+
+const {
+    makeCheckpointSignature,
+    makeCheckpoint
+} = sigs;
+
 const web3 = new Web3();
-const { makeCheckpointSignature, makeCheckpoint } = require('../test/lib/signatures');
 
 module.exports = async (deployer) => {
     if (!process.env.PEGGY) {
@@ -28,7 +37,7 @@ module.exports = async (deployer) => {
     }
 
     if (!process.env.PEGGY_ID) {
-        throw "'PEGGY_ID' parameter missed"
+        throw "'PEGGY_ID' parameter missed";
     }
 
     if (!process.env.POWER_THRESHOLD) {
@@ -37,22 +46,24 @@ module.exports = async (deployer) => {
 
     const peggyId = Buffer.from(web3.utils.keccak256(process.env.PEGGY_ID).slice(2), 'hex');
 
-    const privateKeys = process.env.PRIVATE_KEYS.split(',');
-    const powers = process.env.POWERS.split(',');
-    const totalPower = powers.map(v => parseInt(v)).reduce((a, b) => a + b, 0);
-    const validators = [];
+    const privateKeys    = process.env.PRIVATE_KEYS.split(',');
+    const powers         = process.env.POWERS.split(',');
+    const totalPower     = powers.map(v => parseInt(v)).reduce((a, b) => a + b, 0);
+    const validators     = [];
     const powerThreshold = parseInt(process.env.POWER_THRESHOLD);
 
     if (totalPower < powerThreshold) {
-        throw "POWER_THRESHOLD must be less or equal than total power of all POWERS";
+        throw "'POWER_THRESHOLD' must be less or equal than total power of all 'POWERS'";
     }
 
-    for (let [i, privateKey] of privateKeys.entries()) {
+    for (const [i, privateKey] of privateKeys.entries()) {
         const account = web3.eth.accounts.privateKeyToAccount(privateKey);
+
         validators.push({
             power: powers[i],
             account
         });
+
         web3.eth.accounts.wallet.add(account);
     }
 
@@ -63,11 +74,22 @@ module.exports = async (deployer) => {
     const s = [];
 
     for (let i = 0; i < validators.length; i++) {
-        let signature = makeCheckpointSignature(web3, checkpoint, powerThreshold, validators[i]);
+        const signature = makeCheckpointSignature(web3, checkpoint, powerThreshold, validators[i]);
+
         r[i] = signature.r;
         s[i] = signature.s;
         v[i] = signature.v;
     }
-    
-    await deployer.deploy(Peggy, peggyId, powerThreshold, validators.map(v => v.account.address), powers, v, r, s, {from: process.env.CREATOR_ADDRESS});
+
+    await deployer.deploy(
+        Peggy,
+        peggyId,
+        powerThreshold,
+        validators.map(v => v.account.address),
+        powers,
+        v,
+        r,
+        s,
+        {from: process.env.CREATOR_ADDRESS}
+    );
 };
