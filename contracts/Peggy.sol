@@ -9,10 +9,13 @@ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
     TODO list:
     - QUESTION let's remove powerThreshold? and use totalPower / 2 + 1?
 */
+
+/**
+ * Dfinance PegZone.
+ */
 contract Peggy {
     using SafeMath for uint256;
 
-    // Deposit event.
     event ValsetUpdated(address[] _validators, uint256[] _powers);
     event Deposit(address indexed _erc20, bytes32 indexed _destination, uint256 _amount);
     event Withdraw(address indexed _erc20, address indexed _destination, uint256 _amount);
@@ -35,11 +38,9 @@ contract Peggy {
     // List of processed withdraws.
     mapping(bytes32 => bool) withdrawIds;
 
-    //
-    // Signature utils functions.
-    //
-
-    // Utility function to verify geth style signatures
+    /**
+     * Utility function to verify geth style signatures.
+     */
     function verifySig(
         address _signer,
         bytes32 _theHash,
@@ -50,10 +51,13 @@ contract Peggy {
         bytes32 messageDigest = keccak256(
             abi.encodePacked("\x19Ethereum Signed Message:\n32", _theHash)
         );
+
         return _signer == ecrecover(messageDigest, _v, _r, _s);
     }
 
-    // Validators checkpoint.
+    /**
+     * Validators checkpoint.
+     */
     function makeCheckpoint(
         address[] memory _validators,
         uint256[] memory _powers,
@@ -67,7 +71,9 @@ contract Peggy {
         return checkpoint;
     }
 
-    // Check validator signatures.
+    /**
+     * Check validator signatures.
+     */
     function checkValidatorSignatures(
         // The current validator set and their powers
         address[] memory _currentValidators,
@@ -109,18 +115,28 @@ contract Peggy {
         );
     }
 
-    // !!!IMPORTANT!!!: Only whitelisted ERC20 will be move to dfinance network.
-    // Deposit ERC20 into Peggy.
-    // Whitelist is stored on dfinance part.
-    // Validators use transaction id as unique id for processing deposit.
+    /**
+     * !!!IMPORTANT!!! NOTE: Only whitelisted ERC20 will move to dfinance network.
+     *
+     * Deposit ERC20 into Peggy.
+     * Whitelist is stored on Dfinance part.
+     * Validators use transaction ID as unique ID for processing deposit.
+     *
+     * Emits a {Deposit} event.
+     */
     function deposit(address _erc20, bytes32 _destination, uint256 _amount) public {
         require(IERC20(_erc20).transferFrom(msg.sender, address(this), _amount), 'Peggy: ERC20 transfer failed');
+
         emit Deposit(_erc20, _destination, _amount);
     }
 
-    // This updates the valset by checking that the validators in the current valset have signed off on the
-    // new valset. The signatures supplied are the signatures of the current valset over the checkpoint hash
-    // generated from the new valset.
+    /**
+     * This updates the valset by checking that the validators in the current valset have signed off on the
+     * new valset. The signatures supplied are the signatures of the current valset over the checkpoint hash
+     * generated from the new valset.
+     *
+     * Emits a {ValsetUpdated} event.
+     */
     function updateValset(
         // The new version of the validator set
         address[] memory _newValidators,
@@ -152,10 +168,10 @@ contract Peggy {
         // Check that the supplied current validator set matches the saved checkpoint
         require(
             makeCheckpoint(
-            _validators,
-            _powers,
-            _valsetNonce,
-            peggyId
+                _validators,
+                _powers,
+                _valsetNonce,
+                peggyId
             ) == lastCheckpoint,
             'Peggy: Supplied current validators and powers do not match checkpoint'
         );
@@ -193,11 +209,26 @@ contract Peggy {
         emit ValsetUpdated(_newValidators, _newPowers);
     }
 
-    // Withdraw function.
-    // Accepting id, erc20 address, destination.
-    // Also requires validators, powers.
-    // Anyone can submit.
-    function withdraw(bytes32 _id, address _erc20, address _destination, uint256 _amount, address[] memory _validators, uint256 _valsetNonce, uint256[] memory _powers, uint8[] memory _v, bytes32[] memory _r, bytes32[] memory _s) public {
+    /**
+     * Withdraw function.
+     * Accepting id, erc20 address, destination.
+     * Also requires validators, powers.
+     * Anyone can submit.
+     *
+     * Emits a {Withdraw} event.
+     */
+    function withdraw(
+        bytes32 _id,
+        address _erc20,
+        address _destination,
+        uint256 _amount,
+        address[] memory _validators,
+        uint256 _valsetNonce,
+        uint256[] memory _powers,
+        uint8[] memory _v,
+        bytes32[] memory _r,
+        bytes32[] memory _s
+    ) public {
         require(
             _validators.length == _powers.length &&
             _validators.length == _v.length &&
@@ -211,10 +242,10 @@ contract Peggy {
         // Check that the supplied current validator set matches the saved checkpoint.
         require(
             makeCheckpoint(
-            _validators,
-            _powers,
-            _valsetNonce,
-            peggyId
+                _validators,
+                _powers,
+                _valsetNonce,
+                peggyId
             ) == lastCheckpoint,
             'Peggy: supplied current validators and powers do not match checkpoint'
         );
@@ -242,8 +273,18 @@ contract Peggy {
         emit Withdraw(_erc20, _destination, _amount);
     }
 
-    // Smart contract constructor.
-    constructor(bytes32 _peggyId, uint256 _powerThreshold, address[] memory _validators, uint256[] memory _powers, uint8[] memory _v, bytes32[] memory _r, bytes32[] memory _s) public {
+    /**
+     * Constructor.
+     */
+    constructor(
+        bytes32 _peggyId,
+        uint256 _powerThreshold,
+        address[] memory _validators,
+        uint256[] memory _powers,
+        uint8[] memory _v,
+        bytes32[] memory _r,
+        bytes32[] memory _s
+    ) public {
         require(
             _validators.length == _powers.length &&
             _validators.length == _v.length &&
