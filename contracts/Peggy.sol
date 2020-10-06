@@ -4,6 +4,7 @@ pragma solidity ^0.6.6;
 
 import '@openzeppelin/contracts/math/SafeMath.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import './interfaces/IXFIToken.sol';
 
 /*
     TODO list:
@@ -37,6 +38,9 @@ contract Peggy {
 
     // List of processed withdraws.
     mapping(bytes32 => bool) withdrawIds;
+
+    // XFI token.
+    IXFIToken public xfiToken;
 
     /**
      * Utility function to verify geth style signatures.
@@ -266,6 +270,19 @@ contract Peggy {
             powerThreshold
         );
 
+        // Check whether ERC20 token is XFI.
+        if (_erc20 == address(xfiToken)) {
+            uint256 balance = xfiToken.balanceOf(address(this));
+
+            if (balance < _amount) {
+                uint256 diff = _amount.sub(balance);
+
+                // If the balance of this contract doesn't have enough XFI for
+                // the operation - mint the difference.
+                xfiToken.mint(address(this), diff);
+            }
+        }
+
         require(IERC20(_erc20).transfer(_destination, _amount), 'Peggy: ERC20 transfer failed');
 
         withdrawIds[_id] = true;
@@ -283,7 +300,8 @@ contract Peggy {
         uint256[] memory _powers,
         uint8[] memory _v,
         bytes32[] memory _r,
-        bytes32[] memory _s
+        bytes32[] memory _s,
+        address _xfiToken
     ) public {
         require(
             _validators.length == _powers.length &&
@@ -309,5 +327,6 @@ contract Peggy {
         lastCheckpoint = newCheckpoint;
         peggyId = _peggyId;
         powerThreshold = _powerThreshold;
+        xfiToken = IXFIToken(_xfiToken);
     }
 }

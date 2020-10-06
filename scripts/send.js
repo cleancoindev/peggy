@@ -1,17 +1,18 @@
 /**
- * Transfer  
+ * Transfer.
  *
  * @module scripts/send
  */
 'use strict';
 
 const path = require('path');
+
 require('dotenv').config({path: path.resolve(__dirname, '..', '.env')});
 
-const Web3       = require('web3');
+const Web3     = require('web3');
+const cosmos   = require('cosmos-lib');
 const PeggyABI = require('build/contracts/Peggy.json').abi;
-const ERC20ABI   = require('build/contracts/ERC20.json').abi;
-const cosmos     = require('cosmos-lib');
+const ERC20ABI = require('build/contracts/ERC20.json').abi;
 
 const WEB3_PROVIDER_URL = process.env.WEB3 || 'http://127.0.0.1:9545';
 
@@ -58,13 +59,14 @@ function addressToBytes(address) {
     console.log(`Sender address is ${sender.address}`);
 
     const peggy = new web3.eth.Contract(PeggyABI, process.env.PEGGY_CONTRACT);
+
     const xfiTokenAddr = process.env.XFI_CONTRACT;
 
     console.log(`Staking XFI token address is ${xfiTokenAddr}`);
     const xfiToken = new web3.eth.Contract(ERC20ABI, xfiTokenAddr);
 
-    const args = process.argv.slice(2);
-    const dest = args[0];
+    const args   = process.argv.slice(2);
+    const dest   = args[0];
     const amount = args[1];
 
     console.log('Sending approve / deposit transaction: ' + dest + ' / ' + amount);

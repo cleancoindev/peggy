@@ -44,6 +44,10 @@ module.exports = async (deployer) => {
         throw "'POWER_THRESHOLD' parameter missed";
     }
 
+    if (!process.env.XFI_TOKEN_ADDRESS) {
+        throw "'XFI_TOKEN_ADDRESS' parameter missed";
+    }
+
     const peggyId = Buffer.from(web3.utils.keccak256(process.env.PEGGY_ID).slice(2), 'hex');
 
     const privateKeys    = process.env.PRIVATE_KEYS.split(',');
@@ -81,6 +85,7 @@ module.exports = async (deployer) => {
         v[i] = signature.v;
     }
 
+    // TODO Add XFI token address.
     await deployer.deploy(
         Peggy,
         peggyId,
@@ -90,6 +95,7 @@ module.exports = async (deployer) => {
         v,
         r,
         s,
+        process.env.XFI_TOKEN_ADDRESS,
         {from: process.env.CREATOR_ADDRESS}
     );
 };

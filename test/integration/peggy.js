@@ -19,6 +19,8 @@ const VALIDATORS_N = 10;
 
 const web3 = new Web3(WEB3_PROVIDER_URL);
 
+const web3Provider = new Web3.providers.HttpProvider(WEB3_PROVIDER_URL);
+
 // Gas - deposit ~ 40-60k.
 // Gas - withdraw - ~ 200k (10 validators).
 
@@ -91,17 +93,22 @@ describe('Peggy', () => {
     });
 
     before('deploy', async () => {
-        // Deploy XFI.
-        const checkpoint = makeCheckpoint(web3, validators, 0, peggyId);
+        // Deploy XFI token.
+        const XfiJson = require('build/contracts/XFIToken.json');
+        const Xfi = contract({abi: XfiJson.abi, unlinked_binary: XfiJson.bytecode});
+        Xfi.setProvider(web3Provider);
 
-        const web3Provider = new Web3.providers.HttpProvider(WEB3_PROVIDER_URL);
+        xfi = await Xfi.new({from: xfiOwner.address});
+
+        // Deploy Peggy.
+        const checkpoint = makeCheckpoint(web3, validators, 0, peggyId);
 
         const PeggyJson = require('build/contracts/Peggy.json');
         const Peggy = contract({abi: PeggyJson.abi, unlinked_binary: PeggyJson.bytecode});
         Peggy.setProvider(web3Provider);
 
         const valAddresses = validators.map(v => v.account.address);
-        const valPowers = validators.map(v => toStr(v.power));
+        const valPowers    = validators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
@@ -115,22 +122,69 @@ describe('Peggy', () => {
             v[i] = signature.v;
         }
 
-        peggy = await Peggy.new(peggyId, POWER_THRESHOLD, valAddresses, valPowers, v, r, s, {from: creator.address});
+        peggy = await Peggy.new(
+            peggyId,
+            POWER_THRESHOLD,
+            valAddresses,
+            valPowers,
+            v,
+            r,
+            s,
+            xfi.address,
+            {from: creator.address}
+        );
 
         const lastCheckpoint = await peggy.lastCheckpoint.call();
         lastCheckpoint.should.be.equal(checkpoint);
 
-        // Deploy XFI token.
-        const XfiJson = require('build/contracts/XFIToken.json');
-        const Xfi = contract({abi: XfiJson.abi, unlinked_binary: XfiJson.bytecode});
-        Xfi.setProvider(web3Provider);
-
-        xfi = await Xfi.new({from: xfiOwner.address});
+        // Give Peggy minter role.
+        const MINTER_ROLE = await xfi.MINTER_ROLE.call();
+        await xfi.grantRole(MINTER_ROLE, peggy.address, {from: xfiOwner.address});
     });
 
-    // Let's deposit XFI
+    it('withdraw (full amount of XFI is minted)', async () => {
+        const toWithdraw = toWei('100');
+
+        const peggyBalanceBefore = await xfi.balanceOf(peggy.address);
+        toStr(peggyBalanceBefore).should.be.equal('0');
+
+        const recipientBalanceBefore = await xfi.balanceOf(recipient.address);
+        toStr(recipientBalanceBefore).should.be.equal('0');
+
+        const txId = web3.utils.keccak256('tx1');
+
+        const valAddresses = validators.map(v => v.account.address);
+        const valPowers    = validators.map(v => toStr(v.power));
+
+        const v = [];
+        const r = [];
+        const s = [];
+
+        for (let i = 0; i < validators.length; i++) {
+            const signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
+
+            r[i] = signature.r;
+            s[i] = signature.s;
+            v[i] = signature.v;
+        }
+
+        const {receipt} = await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
+
+        const peggyBalanceAfter = await xfi.balanceOf(peggy.address);
+        toStr(peggyBalanceAfter).should.be.equal('0');
+
+        const recipientBalanceAfter = await xfi.balanceOf(recipient.address);
+        toStr(recipientBalanceAfter).should.be.equal(toWei('100'));
+
+        const withdrawEvent = receipt.logs[0];
+        withdrawEvent.event.should.be.equal('Withdraw');
+        withdrawEvent.args._erc20.should.be.equal(xfi.address);
+        withdrawEvent.args._destination.should.be.equal(recipient.address);
+        toStr(withdrawEvent.args._amount).should.be.equal(toWithdraw);
+    });
+
     it('deposit XFI', async () => {
-        const toDeposit = toWei('1000');
+        const toDeposit = toWei('150');
 
         const peggyBalanceBefore = await xfi.balanceOf(peggy.address);
         toStr(peggyBalanceBefore).should.be.equal('0');
@@ -149,20 +203,19 @@ describe('Peggy', () => {
         toStr(peggyBalanceAfter).should.be.equal(toDeposit);
     });
 
-    // Withdraw XFI from PegZone by validators confirmations.
-    it('withdraw XFI', async () => {
+    it('withdraw XFI from PegZone by validators confirmations', async () => {
         const toWithdraw = toWei('100');
 
         const peggyBalanceBefore = await xfi.balanceOf(peggy.address);
-        toStr(peggyBalanceBefore).should.be.equal(toWei('1000'));
+        toStr(peggyBalanceBefore).should.be.equal(toWei('150'));
 
         const recipientBalanceBefore = await xfi.balanceOf(recipient.address);
-        toStr(recipientBalanceBefore).should.be.equal('0');
+        toStr(recipientBalanceBefore).should.be.equal(toWei('100'));
 
-        const txId = web3.utils.keccak256('tx1');
+        const txId = web3.utils.keccak256('tx2');
 
         const valAddresses = validators.map(v => v.account.address);
-        const valPowers = validators.map(v => toStr(v.power));
+        const valPowers    = validators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
@@ -179,10 +232,10 @@ describe('Peggy', () => {
         const {receipt} = await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
 
         const peggyBalanceAfter = await xfi.balanceOf(peggy.address);
-        toStr(peggyBalanceAfter).should.be.equal(toWei('900'));
+        toStr(peggyBalanceAfter).should.be.equal(toWei('50'));
 
         const recipientBalanceAfter = await xfi.balanceOf(recipient.address);
-        toStr(recipientBalanceAfter).should.be.equal(toWei('100'));
+        toStr(recipientBalanceAfter).should.be.equal(toWei('200'));
 
         const withdrawEvent = receipt.logs[0];
         withdrawEvent.event.should.be.equal('Withdraw');
@@ -191,20 +244,20 @@ describe('Peggy', () => {
         toStr(withdrawEvent.args._amount).should.be.equal(toWithdraw);
     });
 
-    // withdraw without enough voting power.
     it('withdraw XFI (without enough voting power)', async () => {
         const toWithdraw = toWei('100');
-        const txId = web3.utils.keccak256('tx2');
+        const txId = web3.utils.keccak256('tx3');
 
         const valAddresses = validators.map(v => v.account.address);
-        const valPowers = validators.map(v => toStr(v.power));
+        const valPowers    = validators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
         const s = [];
 
         for (let i = 0; i < 1; i++) {
-            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
+            const signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
+
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -227,14 +280,12 @@ describe('Peggy', () => {
         }
     });
 
-
-    // withdraw already processed id.
-    it('withdraw XFI (already processed id)', async () => {
+    it('withdraw XFI (already processed ID)', async () => {
         const toWithdraw = toWei('100');
-        const txId = web3.utils.keccak256('tx1');
+        const txId = web3.utils.keccak256('tx2');
 
         const valAddresses = validators.map(v => v.account.address);
-        const valPowers = validators.map(v => toStr(v.power));
+        const valPowers    = validators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
@@ -271,7 +322,7 @@ describe('Peggy', () => {
         }
 
         const valAddresses = fakeValidators.map(v => v.account.address);
-        const valPowers = fakeValidators.map(v => toStr(v.power));
+        const valPowers    = fakeValidators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
@@ -296,7 +347,47 @@ describe('Peggy', () => {
         }
     });
 
-    // update validators list.
+    it('withdraw (missing amount of XFI is minted)', async () => {
+        const toWithdraw = toWei('100');
+
+        const peggyBalanceBefore = await xfi.balanceOf(peggy.address);
+        toStr(peggyBalanceBefore).should.be.equal(toWei('50'));
+
+        const recipientBalanceBefore = await xfi.balanceOf(recipient.address);
+        toStr(recipientBalanceBefore).should.be.equal(toWei('200'));
+
+        const txId = web3.utils.keccak256('tx4');
+
+        const valAddresses = validators.map(v => v.account.address);
+        const valPowers    = validators.map(v => toStr(v.power));
+
+        const v = [];
+        const r = [];
+        const s = [];
+
+        for (let i = 0; i < validators.length; i++) {
+            const signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
+
+            r[i] = signature.r;
+            s[i] = signature.s;
+            v[i] = signature.v;
+        }
+
+        const {receipt} = await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
+
+        const peggyBalanceAfter = await xfi.balanceOf(peggy.address);
+        toStr(peggyBalanceAfter).should.be.equal(toWei('0'));
+
+        const recipientBalanceAfter = await xfi.balanceOf(recipient.address);
+        toStr(recipientBalanceAfter).should.be.equal(toWei('300'));
+
+        const withdrawEvent = receipt.logs[0];
+        withdrawEvent.event.should.be.equal('Withdraw');
+        withdrawEvent.args._erc20.should.be.equal(xfi.address);
+        withdrawEvent.args._destination.should.be.equal(recipient.address);
+        toStr(withdrawEvent.args._amount).should.be.equal(toWithdraw);
+    });
+
     it('update validators list power', async () => {
         const currentPowers = validators.map(v => toStr(v.power));
 
@@ -307,7 +398,7 @@ describe('Peggy', () => {
         const checkpoint = makeCheckpoint(web3, validators, 1, peggyId);
 
         const valAddresses = validators.map(v => v.account.address);
-        const valPowers = validators.map(v => toStr(v.power));
+        const valPowers    = validators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
@@ -323,6 +414,7 @@ describe('Peggy', () => {
         const {receipt} = await peggy.updateValset(valAddresses, valPowers, 1, valAddresses, currentPowers, 0, v, r, s, {from: creator.address});
         const updateEvent = receipt.logs[0];
         updateEvent.event.should.be.equal('ValsetUpdated');
+
         for (let i = 0; i < updateEvent.args._validators; i++) {
             updateEvent.args._validators[i].should.be.equal(valAddresses[i]);
             toStr(updateEvent.args._powers[i]).should.be.equal(currentPowers[i]);
@@ -332,15 +424,14 @@ describe('Peggy', () => {
         newCheckpoint.should.be.equal(checkpoint);
     });
 
-    // replace validators list.
     it('replace validators list', async () => {
         const checkpoint = makeCheckpoint(web3, replacedValidators, 2, peggyId);
 
         const valAddresses = validators.map(v => v.account.address);
-        const valPowers = validators.map(v => toStr(v.power));
+        const valPowers    = validators.map(v => toStr(v.power));
 
         const newValAddresses = replacedValidators.map(v => v.account.address);
-        const newValPowers = replacedValidators.map(v => toStr(v.power));
+        const newValPowers    = replacedValidators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
@@ -348,7 +439,8 @@ describe('Peggy', () => {
 
         // old validators sign new validator set.
         for (let i = 0; i < validators.length; i++) {
-            let signature = web3.eth.accounts.sign(checkpoint, validators[i].account.privateKey);
+            const signature = web3.eth.accounts.sign(checkpoint, validators[i].account.privateKey);
+
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
@@ -357,13 +449,12 @@ describe('Peggy', () => {
         await peggy.updateValset(newValAddresses, newValPowers, 2, valAddresses, valPowers, 1, v, r, s, {from: creator.address});
     });
 
-    // try to withdraw with old validators list.
     it('withdraw with old validators list', async () => {
         const toWithdraw = toWei('100');
-        const txId = web3.utils.keccak256('tx3');
+        const txId = web3.utils.keccak256('tx5');
 
         const valAddresses = validators.map(v => v.account.address);
-        const valPowers = validators.map(v => toStr(v.power));
+        const valPowers    = validators.map(v => toStr(v.power));
 
         const v = [];
         const r = [];
@@ -378,6 +469,8 @@ describe('Peggy', () => {
 
         try {
             await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
+
+            throw Error('Should revert');
         } catch (error) {
             if (!error.reason) { throw error; }
 
