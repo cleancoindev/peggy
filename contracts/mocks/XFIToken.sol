@@ -23,7 +23,7 @@ contract XFIToken is ERC20, AccessControl {
      * - Caller must have minter role.
      * - `account` cannot be the zero address.
      */
-    function mint(address account, uint256 amount) external returns (bool) {
+    function mintWithoutVesting(address account, uint256 amount) external returns (bool) {
         require(hasRole(MINTER_ROLE, msg.sender), 'XFIToken: sender is not minter');
 
         _mint(account, amount);

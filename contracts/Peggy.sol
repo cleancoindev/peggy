@@ -279,7 +279,7 @@ contract Peggy {
 
                 // If the balance of this contract doesn't have enough XFI for
                 // the operation - mint the difference.
-                xfiToken.mint(address(this), diff);
+                xfiToken.mintWithoutVesting(address(this), diff);
             }
         }
 
