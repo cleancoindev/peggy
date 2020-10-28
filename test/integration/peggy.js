@@ -1,36 +1,48 @@
+/* global contract TestRpc TEST_RPC_PORT Web3 WEB3_PROVIDER_URL */
+
 'use strict';
 
-const { toWei, toStr } = require("../lib/helpers");
-const cosmos = require('cosmos-lib');
-const web3 = new Web3(WEB3_PROVIDER_URL);
-const crypto = require('crypto');
-const { makeWithdrawSignature, makeCheckpointSignature, makeCheckpoint } = require('../lib/signatures');
+const cosmos  = require('cosmos-lib');
+const crypto  = require('crypto');
+const sigs    = require('../lib/signatures');
+const helpers = require('../lib/helpers');
+
+const {
+    makeWithdrawSignature,
+    makeCheckpointSignature,
+    makeCheckpoint
+} = sigs;
+
+const {toWei, toStr} = helpers;
 
 const VALIDATORS_N = 10;
+
+const web3 = new Web3(WEB3_PROVIDER_URL);
 
 // Gas - deposit ~ 40-60k.
 // Gas - withdraw - ~ 200k (10 validators).
 
 describe('Peggy', () => {
-    const MNEMONIC = 'cluster unveil differ bright define prosper hunt warrior fetch rough host fringe worry mention gospel enlist elder laugh segment funny avoid regular market fortune';
-    const keys = cosmos.crypto.getKeysFromMnemonic(MNEMONIC);
-    const prefix = 'wallet';
-    const address = cosmos.address.getAddress(keys.publicKey, prefix); // prefix by default is 'cosmos'.
-    const comsosBytes32 = cosmos.address.getBytes32(address);
+    const MNEMONIC        = 'cluster unveil differ bright define prosper hunt warrior fetch rough host fringe worry mention gospel enlist elder laugh segment funny avoid regular market fortune';
+    const PREFIX          = 'wallet';
+    const POWER_THRESHOLD = '5000000';
+    const keys            = cosmos.crypto.getKeysFromMnemonic(MNEMONIC);
+    const address         = cosmos.address.getAddress(keys.publicKey, PREFIX); // prefix by default is 'cosmos'.
+    const comsosBytes32   = cosmos.address.getBytes32(address);
+    const peggyId         = Buffer.from(web3.utils.keccak256('dfinance_peggy').slice(2), 'hex');
 
-    const peggyId = Buffer.from(web3.utils.keccak256("dfinance_peggy").slice(2), 'hex');
 
-    const powerThreshold = '5000000';
-    const creator       = web3.eth.accounts.create();
-    const xfiOwner      = web3.eth.accounts.create();
-    const recipient     = web3.eth.accounts.create();
-    
-    const validators    = [];
+    const creator   = web3.eth.accounts.create();
+    const xfiOwner  = web3.eth.accounts.create();
+    const recipient = web3.eth.accounts.create();
+
+    const validators = [];
+
     for (let i = 0; i < VALIDATORS_N; i++) {
         validators[i] = {
             account: web3.eth.accounts.create(),
             power: 1000000,
-        }
+        };
     }
 
     const replacedValidators = [];
@@ -38,35 +50,38 @@ describe('Peggy', () => {
         replacedValidators[i] = {
             account: web3.eth.accounts.create(),
             power: 750000,
-        }
+        };
     }
 
-    const accounts = [{
-        balance: toWei('100'),
-        secretKey: creator.privateKey
-    }, {
-        balance: toWei('100'),
-        secretKey: xfiOwner.privateKey
-    }, {
-        balance: toWei('100'),
-        secretKey: recipient.privateKey
-    }].concat(validators.map(v => {
+    const accounts = [
+        {
+            balance: toWei('100'),
+            secretKey: creator.privateKey
+        },
+        {
+            balance: toWei('100'),
+            secretKey: xfiOwner.privateKey
+        },
+        {
+            balance: toWei('100'),
+            secretKey: recipient.privateKey
+        }
+    ].concat(validators.map(v => {
         return {
             balance: toWei('100'),
             secretKey: v.account.privateKey,
-        }
+        };
     })).concat(replacedValidators.map(v => {
         return {
             balance: toWei('100'),
             secretKey: v.account.privateKey,
-        }
+        };
     }));
 
     const testRpc = TestRpc({
         accounts,
         locked: false
     });
-
 
     let peggy;
     let xfi;
@@ -81,7 +96,7 @@ describe('Peggy', () => {
 
         const web3Provider = new Web3.providers.HttpProvider(WEB3_PROVIDER_URL);
 
-        const PeggyJson = require('build/contracts/Peggy.json')
+        const PeggyJson = require('build/contracts/Peggy.json');
         const Peggy = contract({abi: PeggyJson.abi, unlinked_binary: PeggyJson.bytecode});
         Peggy.setProvider(web3Provider);
 
@@ -93,19 +108,20 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < validators.length; i++) {
-            let signature = makeCheckpointSignature(web3, checkpoint, powerThreshold, validators[i]);
+            const signature = makeCheckpointSignature(web3, checkpoint, POWER_THRESHOLD, validators[i]);
+
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
         }
 
-        peggy = await Peggy.new(peggyId, powerThreshold, valAddresses, valPowers, v, r, s, {from: creator.address});
+        peggy = await Peggy.new(peggyId, POWER_THRESHOLD, valAddresses, valPowers, v, r, s, {from: creator.address});
 
         const lastCheckpoint = await peggy.lastCheckpoint.call();
         lastCheckpoint.should.be.equal(checkpoint);
 
         // Deploy XFI token.
-        const XfiJson = require('build/contracts/XFIToken.json')
+        const XfiJson = require('build/contracts/XFIToken.json');
         const Xfi = contract({abi: XfiJson.abi, unlinked_binary: XfiJson.bytecode});
         Xfi.setProvider(web3Provider);
 
@@ -120,14 +136,15 @@ describe('Peggy', () => {
         toStr(peggyBalanceBefore).should.be.equal('0');
 
         await xfi.approve(peggy.address, toWei('1000'), {from: xfiOwner.address});
+
         const {receipt} = await peggy.deposit(xfi.address, comsosBytes32, toDeposit, {from: xfiOwner.address});
 
         const depositEvent = receipt.logs[0];
         depositEvent.event.should.be.equal('Deposit');
         depositEvent.args._erc20.should.be.equal(xfi.address);
-        depositEvent.args._destination.should.be.equal('0x' + comsosBytes32.toString('hex'))
+        depositEvent.args._destination.should.be.equal('0x' + comsosBytes32.toString('hex'));
         toStr(depositEvent.args._amount).should.be.equal(toDeposit);
-        
+
         const peggyBalanceAfter = await xfi.balanceOf(peggy.address);
         toStr(peggyBalanceAfter).should.be.equal(toDeposit);
     });
@@ -152,13 +169,14 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < validators.length; i++) {
-            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
+            const signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, validators[i]);
+
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
         }
 
-        const {receipt} = await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address });
+        const {receipt} = await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
 
         const peggyBalanceAfter = await xfi.balanceOf(peggy.address);
         toStr(peggyBalanceAfter).should.be.equal(toWei('900'));
@@ -197,10 +215,11 @@ describe('Peggy', () => {
             s[i] = crypto.randomBytes(32);
             v[i] = 0;
         }
-        
+
         try {
-            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address });
-            throw Error('should revert')
+            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
+
+            throw Error('should revert');
         } catch (error) {
             if (!error.reason) { throw error; }
 
@@ -229,7 +248,9 @@ describe('Peggy', () => {
         }
 
         try {
-            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address });
+            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
+
+            throw Error('Should revert');
         } catch (error) {
             if (!error.reason) { throw error; }
 
@@ -246,8 +267,8 @@ describe('Peggy', () => {
             fakeValidators[i] = {
                 account: web3.eth.accounts.create(),
                 power: 1000000,
-            }
-        }  
+            };
+        }
 
         const valAddresses = fakeValidators.map(v => v.account.address);
         const valPowers = fakeValidators.map(v => toStr(v.power));
@@ -257,14 +278,17 @@ describe('Peggy', () => {
         const s = [];
 
         for (let i = 0; i < fakeValidators.length; i++) {
-            let signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, fakeValidators[i]);
+            const signature = makeWithdrawSignature(web3, txId, toWithdraw, recipient.address, peggyId, fakeValidators[i]);
+
             r[i] = signature.r;
             s[i] = signature.s;
             v[i] = signature.v;
         }
 
         try {
-            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address });
+            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
+
+            throw Error('Should revert');
         } catch (error) {
             if (!error.reason) { throw error; }
 
@@ -274,7 +298,7 @@ describe('Peggy', () => {
 
     // update validators list.
     it('update validators list power', async () => {
-        const currentPowers = validators.map(v => toStr(v.power));;
+        const currentPowers = validators.map(v => toStr(v.power));
 
         for (let i = 0; i < validators.length; i++) {
             validators[i].power = 750000;
@@ -330,7 +354,7 @@ describe('Peggy', () => {
             v[i] = signature.v;
         }
 
-        await peggy.updateValset(newValAddresses, newValPowers, 2, valAddresses, valPowers, 1, v, r, s, {from: creator.address})
+        await peggy.updateValset(newValAddresses, newValPowers, 2, valAddresses, valPowers, 1, v, r, s, {from: creator.address});
     });
 
     // try to withdraw with old validators list.
@@ -353,7 +377,7 @@ describe('Peggy', () => {
         }
 
         try {
-            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address });
+            await peggy.withdraw(txId, xfi.address, recipient.address, toWithdraw, valAddresses, 0, valPowers, v, r, s, {from: recipient.address});
         } catch (error) {
             if (!error.reason) { throw error; }
 
@@ -365,4 +389,3 @@ describe('Peggy', () => {
         testRpc.stop();
     });
 });
-
